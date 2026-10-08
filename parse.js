@@ -191,7 +191,22 @@
     return L.join('\r\n') + '\r\n';
   }
 
+  // Combine deux lectures de la même carte : la première garde la main, la seconde comble les trous.
+  function mergeCards(a, b) {
+    const out = Object.assign({}, a);
+    Object.keys(b).forEach(k => { if (!out[k] && b[k] && k !== 'notes') out[k] = b[k]; });
+    if (out.mobile && out.mobile === out.tel) out.tel = '';
+    return out;
+  }
+
+  // Champs sans lesquels une fiche ne sert à rien : un nom, un téléphone, un e-mail.
+  function isComplete(c) {
+    return !!(c.nom && (c.mobile || c.tel) && c.email);
+  }
+
   root.parseCard = parseCard;
+  root.mergeCards = mergeCards;
+  root.isComplete = isComplete;
   root.toVCard = toVCard;
-  if (typeof module !== 'undefined') module.exports = { parseCard, toVCard };
+  if (typeof module !== 'undefined') module.exports = { parseCard, toVCard, mergeCards, isComplete };
 })(typeof window !== 'undefined' ? window : globalThis);
