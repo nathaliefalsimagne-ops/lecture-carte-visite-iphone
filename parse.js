@@ -48,7 +48,7 @@
 
   function parseCard(text) {
     const lines = text.split(/\r?\n/).map(clean).filter(l => l.length > 1);
-    const out = { prenom: '', nom: '', fonction: '', societe: '', mobile: '', tel: '', email: '', web: '', adresse: '', notes: '' };
+    const out = { prenom: '', nom: '', fonction: '', societe: '', mobile: '', tel: '', email: '', web: '', linkedin: '', adresse: '', notes: '' };
     const used = new Set();
 
     // E-mail
@@ -58,10 +58,17 @@
       if (m && !out.email) { out.email = m[0].replace(/\s/g, '').toLowerCase(); used.add(i); }
     });
 
+    // Profil LinkedIn imprimé sur la carte (linkedin.com/in/... ou /company/...)
+    const liRe = /(?:https?:\/\/)?(?:[a-z]{2,3}\.)?linkedin\.com\/(?:in|pub|company)\/[A-Za-z0-9À-ÿ\-_%.]+/i;
+    lines.forEach((l, i) => {
+      const m = l.replace(/\s+\/\s*/g, '/').match(liRe);
+      if (m && !out.linkedin) { out.linkedin = 'https://www.' + m[0].replace(/^https?:\/\//i, '').replace(/^(?:[a-z]{2,3}\.)?/i, '').replace(/\.+$/, ''); used.add(i); }
+    });
+
     // Site web
     const webRe = /\b((?:https?:\/\/)?(?:www\.)[A-Z0-9-]+(?:\.[A-Z0-9-]+)*\.[A-Z]{2,}(?:\/\S*)?|(?:https?:\/\/)[^\s]+)/i;
     lines.forEach((l, i) => {
-      if (out.web) return;
+      if (out.web || used.has(i)) return;
       const m = l.replace(emailRe, '').match(webRe);
       if (m) { out.web = m[0].replace(/^https?:\/\//i, '').toLowerCase(); used.add(i); }
     });
@@ -170,6 +177,20 @@
     return out;
   }
 
+  function isLinkedInProfile(u) {
+    return /linkedin\.com\/(in|pub|company)\/|lnkd\.in\//i.test(u || "");
+  }
+
+  function normLinkedIn(u) {
+    return /^https?:/i.test(u) ? u : 'https://' + u.replace(/^\/+/, '');
+  }
+
+  // Lien de recherche LinkedIn sur le nom : c'est la personne qui reconnaît le bon profil.
+  function linkedInSearch(c) {
+    const q = [c.prenom, c.nom].filter(Boolean).join(' ');
+    return 'https://www.linkedin.com/search/results/people/?keywords=' + encodeURIComponent(q);
+  }
+
   function esc(s) {
     return String(s || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/([,;])/g, '\\$1');
   }
@@ -184,6 +205,14 @@
     if (c.tel) L.push('TEL;TYPE=WORK,VOICE:' + c.tel);
     if (c.email) L.push('EMAIL;TYPE=INTERNET,WORK:' + c.email);
     if (c.web) L.push('URL:' + (/^https?:/i.test(c.web) ? c.web : 'https://' + c.web));
+    // LinkedIn : le profil s'il est connu, sinon la recherche prête à lancer depuis la fiche
+    const li = isLinkedInProfile(c.linkedin) ? normLinkedIn(c.linkedin) : '';
+    if (li) {
+      L.push('item1.URL:' + li, 'item1.X-ABLabel:LinkedIn');
+      L.push('X-SOCIALPROFILE;type=linkedin:' + li);
+    } else if (c.prenom || c.nom) {
+      L.push('item1.URL:' + linkedInSearch(c), 'item1.X-ABLabel:Recherche LinkedIn');
+    }
     if (c.adresse) L.push('ADR;TYPE=WORK:;;' + esc(c.adresse) + ';;;;');
     const note = ['Carte scannée le ' + new Date().toLocaleDateString('fr-FR'), c.notes].filter(Boolean).join(' - ');
     L.push('NOTE:' + esc(note));
@@ -206,7 +235,10 @@
 
   root.parseCard = parseCard;
   root.mergeCards = mergeCards;
+  root.isLinkedInProfile = isLinkedInProfile;
+  root.normLinkedIn = normLinkedIn;
+  root.linkedInSearch = linkedInSearch;
   root.isComplete = isComplete;
   root.toVCard = toVCard;
-  if (typeof module !== 'undefined') module.exports = { parseCard, toVCard, mergeCards, isComplete };
+  if (typeof module !== 'undefined') module.exports = { parseCard, toVCard, mergeCards, isComplete, isLinkedInProfile, linkedInSearch };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -32,6 +32,7 @@
     background: var(--accent); color: var(--accent-ink);
   }
   .btn.ghost { background: var(--card); color: var(--ink); border: 1px solid var(--line); }
+  .btn.li { margin: 8px 0 0; padding: 12px; font-size: 15px; text-decoration: none; color: #0a66c2; border-color: #0a66c2; }
   .btn:disabled { opacity: .5; }
   input[type=file] { display: none; }
   #preview { display: none; width: 100%; border-radius: 12px; margin: 10px 0; border: 1px solid var(--line); }
@@ -78,6 +79,9 @@
     <label for="tel">Fixe</label><input type="tel" id="tel">
     <label for="email">E-mail</label><input type="email" id="email">
     <label for="web">Site web</label><input type="text" id="web">
+    <label for="linkedin">LinkedIn</label>
+    <input type="text" id="linkedin" placeholder="Colle ici le lien du profil une fois trouvé">
+    <a class="btn ghost li" id="btnLi" href="#" target="_blank" rel="noopener">Chercher sur LinkedIn</a>
     <label for="adresse">Adresse</label><input type="text" id="adresse">
     <label for="notes">Notes</label><textarea id="notes"></textarea>
     <details><summary>Texte lu sur la carte</summary><pre id="raw"></pre></details>
@@ -93,10 +97,10 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
-<script src="parse.js?v=3"></script>
+<script src="parse.js?v=4"></script>
 <script>
   const $ = id => document.getElementById(id);
-  const FIELDS = ['prenom', 'nom', 'fonction', 'societe', 'mobile', 'tel', 'email', 'web', 'adresse', 'notes'];
+  const FIELDS = ['prenom', 'nom', 'fonction', 'societe', 'mobile', 'tel', 'email', 'web', 'linkedin', 'adresse', 'notes'];
   let worker = null, pass = 'Lecture de la carte…';
 
   $('btnCam').onclick = () => $('fileCam').click();
@@ -105,6 +109,16 @@
   $('fileLib').onchange = e => handle(e.target);
   $('btnNew').onclick = reset;
   $('btnSave').onclick = save;
+  ['prenom', 'nom', 'linkedin'].forEach(f => $(f).addEventListener('input', updateLi));
+
+  // Lien direct si le profil est connu, sinon recherche sur le nom.
+  // Un vrai lien (et non window.open) pour que l'iPhone ouvre l'app LinkedIn si elle est installée.
+  function updateLi() {
+    const c = current();
+    const known = isLinkedInProfile(c.linkedin);
+    $('btnLi').href = known ? normLinkedIn(c.linkedin) : linkedInSearch(c);
+    $('btnLi').textContent = known ? 'Ouvrir le profil LinkedIn' : 'Chercher ' + ([c.prenom, c.nom].filter(Boolean).join(' ') || 'la personne') + ' sur LinkedIn';
+  }
   $('btnShare').onclick = share;
 
   function status(msg, pct) {
@@ -178,6 +192,7 @@
   function fill(c, raw) {
     FIELDS.forEach(f => $(f).value = c[f] || '');
     $('raw').textContent = raw;
+    updateLi();
     $('form').style.display = 'block';
     $('actions').style.display = 'block';
     $('form').scrollIntoView({ behavior: 'smooth' });
