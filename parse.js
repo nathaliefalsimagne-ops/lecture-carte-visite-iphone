@@ -86,6 +86,23 @@
       });
     });
 
+    // Rattrapage si aucun numéro trouvé : l'OCR confond souvent O/0, l/1, et lit "+" comme "4" ou "t".
+    // On remet les sosies en chiffres, on garde les seuls chiffres de la ligne et on cherche un numéro français.
+    if (!out.mobile && !out.tel) {
+      lines.forEach((l, i) => {
+        if (used.has(i) || /@|www|siret|siren|tva|rcs|iban|bic|ape|naf/i.test(l)) return;
+        const fixed = l.split(' ').map(w => /\d/.test(w) ? w.replace(/[Oo]/g, '0').replace(/[lI|]/g, '1') : w).join(' ');
+        const d = fixed.replace(/\D/g, '');
+        const intl = d.match(/33([1-9]\d{8})/), nat = d.match(/0([1-9]\d{8})/);
+        if (!intl && !nat) return;
+        const p = normPhone(intl ? '+33' + intl[1] : '0' + nat[1]);
+        if (!p) return;
+        used.add(i);
+        if (isMobile(p) && !out.mobile) out.mobile = p;
+        else if (!out.tel) out.tel = p;
+      });
+    }
+
     // Adresse : ligne avec code postal à 5 chiffres (+ la ligne précédente si c'est une rue)
     lines.forEach((l, i) => {
       if (out.adresse || used.has(i)) return;

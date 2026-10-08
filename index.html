@@ -126,7 +126,7 @@
   // Pas de retouche de contraste : elle fait "lire" le grain du bureau à Tesseract.
   async function prepare(file) {
     const img = await createImageBitmap(file, { imageOrientation: 'from-image' }).catch(() => loadImg(file));
-    const max = 1800, k = Math.min(1, max / Math.max(img.width, img.height));
+    const max = 2400, k = Math.min(1, max / Math.max(img.width, img.height));
     const c = document.createElement('canvas');
     c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
     c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
@@ -184,22 +184,48 @@
     return ([c.prenom, c.nom].filter(Boolean).join(' ') || c.societe || 'contact').replace(/[^\wÀ-ÿ -]/g, '') + '.vcf';
   }
 
-  // Safari ouvre une vCard dans l'aperçu Contacts, avec le bouton "Créer un nouveau contact".
-  function save() {
-    const vcf = toVCard(current());
-    location.href = 'data:text/vcard;charset=utf-8,' + encodeURIComponent(vcf);
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+  function b64url(str) {
+    const bytes = new TextEncoder().encode(str);
+    let bin = '';
+    bytes.forEach(b => bin += String.fromCharCode(b));
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
 
-  // Plan B : feuille de partage iOS (AirDrop, Mail, Fichiers…), utile si l'aperçu ne s'ouvre pas.
-  async function share() {
+  function vcfFile(c) {
+    return new File([toVCard(c)], fileName(c), { type: 'text/vcard' });
+  }
+
+  // Ouvre la fiche comme un fichier .vcf servi par le site (via sw.js) : Safari affiche
+  // l'aperçu Contacts avec "Créer un nouveau contact". Sinon, on télécharge le fichier.
+  function save() {
     const c = current();
-    const file = new File([toVCard(c)], fileName(c), { type: 'text/vcard' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: fileName(c) }); } catch (e) { /* annulé */ }
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      status('Ouverture de la fiche dans Contacts…');
+      location.href = 'contact.vcf?d=' + b64url(toVCard(c));
     } else {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(file); a.download = file.name;
-      document.body.appendChild(a); a.click(); a.remove();
+      download(vcfFile(c));
+      status('Fiche téléchargée : ouvre-la depuis la flèche de téléchargement de Safari (ou l\'app Fichiers), puis "Créer un nouveau contact".');
+    }
+  }
+
+  function download(file) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(file); a.download = file.name;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  // Plan B : feuille de partage iOS (Enregistrer dans Fichiers, AirDrop, Mail…).
+  async function share() {
+    const file = vcfFile(current());
+    try {
+      if (!navigator.canShare || !navigator.canShare({ files: [file] })) throw new Error('partage de fichier non disponible');
+      await navigator.share({ files: [file] });
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      download(file);
+      status('Partage impossible ici (' + (e && e.message || e) + '), la fiche a été téléchargée à la place.');
     }
   }
 </script>
