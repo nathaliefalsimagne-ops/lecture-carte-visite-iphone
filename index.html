@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scan Carte</title>
+<meta name="theme-color" content="#1b1f3b">
+<meta name="apple-mobile-web-app-title" content="Scan Carte">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  :root {
+    --bg: #f5f5f7; --card: #ffffff; --ink: #1b1f3b; --muted: #6b6f85;
+    --accent: #5b3df5; --accent-ink: #ffffff; --line: #e2e2ea; --ok: #1f9d55;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1020; --card: #1b1d33; --ink: #f2f2f7; --muted: #a0a3bd; --line: #2e3150; --accent: #8b74ff; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: env(safe-area-inset-top) 16px calc(24px + env(safe-area-inset-bottom));
+  }
+  main { max-width: 520px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 20px 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+  .btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; padding: 16px; margin: 0 0 10px; border-radius: 14px; border: 0;
+    font-size: 17px; font-weight: 600; cursor: pointer;
+    background: var(--accent); color: var(--accent-ink);
+  }
+  .btn.ghost { background: var(--card); color: var(--ink); border: 1px solid var(--line); }
+  .btn:disabled { opacity: .5; }
+  input[type=file] { display: none; }
+  #preview { display: none; width: 100%; border-radius: 12px; margin: 10px 0; border: 1px solid var(--line); }
+  #status { color: var(--muted); font-size: 14px; min-height: 20px; margin: 6px 0 10px; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; display: none; margin-bottom: 12px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  form { display: none; background: var(--card); border-radius: 14px; padding: 14px; border: 1px solid var(--line); margin-bottom: 14px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; text-transform: uppercase; letter-spacing: .04em; }
+  label:first-child { margin-top: 0; }
+  input[type=text], input[type=email], input[type=tel], textarea {
+    width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--ink); font-size: 16px; font-family: inherit;
+  }
+  textarea { min-height: 60px; resize: vertical; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  #actions { display: none; }
+  details { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  pre { white-space: pre-wrap; font-size: 12px; }
+  .help { font-size: 13px; color: var(--muted); margin-top: 18px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Scan Carte</h1>
+  <p class="sub">Photo d'une carte de visite, vérification, ajout aux Contacts. La lecture se fait sur ton téléphone, rien n'est envoyé ailleurs.</p>
+
+  <button class="btn" id="btnCam" type="button">Prendre la carte en photo</button>
+  <button class="btn ghost" id="btnLib" type="button">Choisir une photo existante</button>
+  <input type="file" id="fileCam" accept="image/*" capture="environment">
+  <input type="file" id="fileLib" accept="image/*">
+
+  <img id="preview" alt="Carte de visite">
+  <div class="bar" id="bar"><i></i></div>
+  <div id="status"></div>
+
+  <form id="form" autocomplete="off" onsubmit="return false">
+    <div class="row">
+      <div><label for="prenom">Prénom</label><input type="text" id="prenom"></div>
+      <div><label for="nom">Nom</label><input type="text" id="nom"></div>
+    </div>
+    <label for="fonction">Fonction</label><input type="text" id="fonction">
+    <label for="societe">Société</label><input type="text" id="societe">
+    <label for="mobile">Mobile</label><input type="tel" id="mobile">
+    <label for="tel">Fixe</label><input type="tel" id="tel">
+    <label for="email">E-mail</label><input type="email" id="email">
+    <label for="web">Site web</label><input type="text" id="web">
+    <label for="adresse">Adresse</label><input type="text" id="adresse">
+    <label for="notes">Notes</label><textarea id="notes"></textarea>
+    <details><summary>Texte lu sur la carte</summary><pre id="raw"></pre></details>
+  </form>
+
+  <div id="actions">
+    <button class="btn" id="btnSave" type="button">Ajouter aux Contacts</button>
+    <button class="btn ghost" id="btnShare" type="button">Partager la fiche (.vcf)</button>
+    <button class="btn ghost" id="btnNew" type="button">Scanner une autre carte</button>
+  </div>
+
+  <p class="help">Astuce : carte bien à plat, bonne lumière, cadrée au plus près. Tu peux corriger chaque champ avant d'enregistrer.</p>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script src="parse.js"></script>
+<script>
+  const $ = id => document.getElementById(id);
+  const FIELDS = ['prenom', 'nom', 'fonction', 'societe', 'mobile', 'tel', 'email', 'web', 'adresse', 'notes'];
+  let worker = null;
+
+  $('btnCam').onclick = () => $('fileCam').click();
+  $('btnLib').onclick = () => $('fileLib').click();
+  $('fileCam').onchange = e => handle(e.target);
+  $('fileLib').onchange = e => handle(e.target);
+  $('btnNew').onclick = reset;
+  $('btnSave').onclick = save;
+  $('btnShare').onclick = share;
+
+  function status(msg, pct) {
+    $('status').textContent = msg;
+    $('bar').style.display = pct == null ? 'none' : 'block';
+    if (pct != null) $('bar').firstElementChild.style.width = Math.round(pct * 100) + '%';
+  }
+
+  function reset() {
+    $('form').style.display = 'none';
+    $('actions').style.display = 'none';
+    $('preview').style.display = 'none';
+    FIELDS.forEach(f => $(f).value = '');
+    status('');
+    window.scrollTo(0, 0);
+  }
+
+  // Redimensionne la photo (les photos iPhone font 12 Mpx, inutile et lent pour l'OCR).
+  // Pas de retouche de contraste : elle fait "lire" le grain du bureau à Tesseract.
+  async function prepare(file) {
+    const img = await createImageBitmap(file, { imageOrientation: 'from-image' }).catch(() => loadImg(file));
+    const max = 1800, k = Math.min(1, max / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c;
+  }
+
+  function loadImg(file) {
+    return new Promise((ok, ko) => {
+      const im = new Image();
+      im.onload = () => ok(im); im.onerror = ko;
+      im.src = URL.createObjectURL(file);
+    });
+  }
+
+  async function handle(input) {
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+    reset();
+    $('preview').src = URL.createObjectURL(file);
+    $('preview').style.display = 'block';
+    try {
+      status('Préparation de la photo…', 0.02);
+      const canvas = await prepare(file);
+      if (!worker) {
+        status('Chargement du moteur de lecture (la première fois seulement)…', 0.05);
+        worker = await Tesseract.createWorker('fra', 1, {
+          logger: m => { if (m.status === 'recognizing text') status('Lecture de la carte…', 0.1 + m.progress * 0.9); }
+        });
+      }
+      const { data } = await worker.recognize(canvas);
+      fill(parseCard(data.text), data.text);
+      status('Vérifie les champs, puis ajoute aux Contacts.');
+    } catch (err) {
+      console.error(err);
+      status('Lecture impossible : ' + (err && err.message || err) + '. Vérifie ta connexion pour le premier usage.');
+    }
+  }
+
+  function fill(c, raw) {
+    FIELDS.forEach(f => $(f).value = c[f] || '');
+    $('raw').textContent = raw;
+    $('form').style.display = 'block';
+    $('actions').style.display = 'block';
+    $('form').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function current() {
+    const c = {};
+    FIELDS.forEach(f => c[f] = $(f).value.trim());
+    return c;
+  }
+
+  function fileName(c) {
+    return ([c.prenom, c.nom].filter(Boolean).join(' ') || c.societe || 'contact').replace(/[^\wÀ-ÿ -]/g, '') + '.vcf';
+  }
+
+  // Safari ouvre une vCard dans l'aperçu Contacts, avec le bouton "Créer un nouveau contact".
+  function save() {
+    const vcf = toVCard(current());
+    location.href = 'data:text/vcard;charset=utf-8,' + encodeURIComponent(vcf);
+  }
+
+  // Plan B : feuille de partage iOS (AirDrop, Mail, Fichiers…), utile si l'aperçu ne s'ouvre pas.
+  async function share() {
+    const c = current();
+    const file = new File([toVCard(c)], fileName(c), { type: 'text/vcard' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: fileName(c) }); } catch (e) { /* annulé */ }
+    } else {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(file); a.download = file.name;
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+  }
+</script>
+</body>
+</html>
